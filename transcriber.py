@@ -1,5 +1,6 @@
 import whisper
 import os
+from datetime import datetime
 
 class AudioTranscriber:
     def __init__(self, model_size="base"):
@@ -35,18 +36,26 @@ class AudioTranscriber:
 
         transcript_text = result["text"]
 
-        # Optionally save to a text file
+        # Optionally save to a Markdown file
         if save_to_file:
             os.makedirs(output_dir, exist_ok=True)
             base_name = os.path.splitext(os.path.basename(audio_file_path))[0]
-            output_file = os.path.join(output_dir, f"{base_name}.txt")
+            output_file = os.path.join(output_dir, f"{base_name}.md")
+
+            # Get current date
+            current_date = datetime.now().strftime("%B %d, %Y")
 
             with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(f"Transcript\n")
-                f.write(f"{'=' * 50}\n\n")
+                # Write Markdown header
+                f.write(f"# {base_name}\n\n")
+                f.write(f"**Transcribed:** {current_date}\n")
+                f.write(f"**Model:** Whisper ({self.model_size})\n")
+                f.write(f"**Language:** {result.get('language', 'unknown')}\n\n")
+                f.write("---\n\n")
+                f.write("## Transcript\n\n")
                 f.write(transcript_text)
-                f.write(f"\n\n{'=' * 50}\n")
-                f.write(f"Transcribed with Whisper ({self.model_size} model)\n")
+                f.write("\n\n---\n\n")
+                f.write(f"*Transcribed with OpenAI Whisper ({self.model_size} model)*\n")
 
             print(f"Transcript saved to: {output_file}")
 
@@ -74,17 +83,26 @@ class AudioTranscriber:
 
         full_formatted = "\n".join(formatted_transcript)
 
-        # Save to file
+        # Save to Markdown file
         os.makedirs(output_dir, exist_ok=True)
         base_name = os.path.splitext(os.path.basename(audio_file_path))[0]
-        output_file = os.path.join(output_dir, f"{base_name}_timestamped.txt")
+        output_file = os.path.join(output_dir, f"{base_name}_timestamped.md")
+
+        # Get current date
+        current_date = datetime.now().strftime("%B %d, %Y")
 
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(f"Transcript with Timestamps\n")
-            f.write(f"{'=' * 50}\n\n")
+            # Write Markdown header
+            f.write(f"# {base_name}\n\n")
+            f.write(f"**Transcribed:** {current_date}\n")
+            f.write(f"**Model:** Whisper ({self.model_size})\n")
+            f.write(f"**Language:** {result.get('language', 'unknown')}\n")
+            f.write(f"**Format:** Timestamped\n\n")
+            f.write("---\n\n")
+            f.write("## Transcript with Timestamps\n\n")
             f.write(full_formatted)
-            f.write(f"\n\n{'=' * 50}\n")
-            f.write(f"Transcribed with Whisper ({self.model_size} model)\n")
+            f.write("\n\n---\n\n")
+            f.write(f"*Transcribed with OpenAI Whisper ({self.model_size} model)*\n")
 
         print(f"Timestamped transcript saved to: {output_file}")
 

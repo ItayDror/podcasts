@@ -157,7 +157,8 @@ Available Whisper models (accuracy vs speed):
         )
 
         print(f"\nSuccess! Transcript saved with ID: {transcript_id}")
-        print(f"Transcript file location: transcripts/{title}.txt")
+        suffix = "_timestamped" if args.timestamps else ""
+        print(f"Transcript file location: transcripts/{title}{suffix}.md")
 
         # Show a preview
         print("\n" + "=" * 60)

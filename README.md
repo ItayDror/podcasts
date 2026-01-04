@@ -117,7 +117,7 @@ python3 transcribe_podcast.py --search "keyword"
 2. **Transcribe:** Whisper converts speech to text
 3. **Save:** Transcript is saved to:
    - Database: `transcripts.db` (SQLite database)
-   - Text file: `transcripts/[title].txt`
+   - Markdown file: `transcripts/[title].md`
 4. **Cleanup:** Downloaded audio file is automatically deleted
 
 ## Project Structure
@@ -186,7 +186,7 @@ python3 transcribe_podcast.py "URL" --model tiny
 
 Your transcripts are stored in:
 - **Database file:** `transcripts.db` (in the project folder)
-- **Text files:** `transcripts/` (in the project folder)
+- **Markdown files:** `transcripts/` (in the project folder)
 
 You can back these up to keep your transcripts safe.
 
