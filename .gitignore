@@ -1,0 +1,45 @@
+# Python virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Transcripts and database (user-generated content)
+transcripts/
+transcripts.db
+*.db
+*.db-journal
+
+# Temporary files
+temp/
+*.mp3
+*.mp4
+*.wav
+*.m4a
+
+# Environment variables
+.env
+.env.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
