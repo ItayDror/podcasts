@@ -32,6 +32,21 @@ def _extract_youtube_video_id(url: str) -> Optional[str]:
     return None
 
 
+def _fetch_youtube_title(video_id: str) -> Optional[str]:
+    """Fetch the YouTube video title using yt-dlp (no download)."""
+    try:
+        import yt_dlp
+
+        with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
+            info = ydl.extract_info(
+                f"https://www.youtube.com/watch?v={video_id}", download=False
+            )
+            return info.get("title")
+    except Exception as e:
+        logger.info(f"Could not fetch YouTube title for {video_id}: {e}")
+        return None
+
+
 def _fetch_youtube_captions(video_id: str) -> Optional[tuple[str, str]]:
     """
     Try to fetch YouTube captions using youtube-transcript-api.
@@ -110,6 +125,7 @@ class TranscriptFetcher:
             if status_callback:
                 status_callback("Checking for YouTube captions...")
 
+            title = _fetch_youtube_title(video_id)
             result = _fetch_youtube_captions(video_id)
             if result:
                 text, language = result
@@ -126,6 +142,7 @@ class TranscriptFetcher:
                         language=language,
                         source="youtube_captions",
                         quality_score=quality.score,
+                        title=title,
                     )
                 else:
                     logger.info(
