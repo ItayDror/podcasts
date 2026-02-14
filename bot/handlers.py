@@ -283,11 +283,24 @@ class BotHandlers:
             return
 
         session = self.sessions.load(update.effective_user.id)
-        if not session.insights:
+
+        # If user provided text after /upload, use that as insights
+        custom_text = " ".join(context.args) if context.args else None
+        insights = custom_text or session.insights
+
+        if not insights:
             await update.message.reply_text(
-                "No insights to upload. Use /insights first."
+                "No insights to upload.\n\n"
+                "Either:\n"
+                "• /insights - Generate with AI first\n"
+                "• /upload Your custom text here..."
             )
             return
+
+        # Update session with custom insights if provided
+        if custom_text:
+            session.insights = custom_text
+            self.sessions.save(session)
 
         await update.message.reply_text("Uploading to Podcast Tracker...")
 
