@@ -4,6 +4,7 @@ Podcast Transcriber - Download and transcribe podcasts using Whisper AI
 """
 
 import argparse
+import os
 import sys
 from downloader import PodcastDownloader
 from transcriber import AudioTranscriber
@@ -23,12 +24,6 @@ Examples:
 
   # Include timestamps in the transcript
   python3 transcribe_podcast.py "URL" --timestamps
-
-  # List all previous transcriptions
-  python3 transcribe_podcast.py --list
-
-  # Search transcripts
-  python3 transcribe_podcast.py --search "keyword"
 
 Available Whisper models (accuracy vs speed):
   tiny   - Fastest, least accurate (~1GB RAM)
@@ -126,6 +121,8 @@ Available Whisper models (accuracy vs speed):
     downloader = PodcastDownloader()
     audio_file = None
 
+    transcript_id = None
+
     try:
         # Step 1: Download audio
         print("\n[1/3] Downloading audio...")
@@ -145,7 +142,7 @@ Available Whisper models (accuracy vs speed):
         print(f"\nDetected language: {result.get('language', 'unknown')}")
         print(f"Transcript length: {len(transcript_text)} characters")
 
-        # Step 3: Save to database
+        # Step 3: Save to database as safety net
         print("\n[3/3] Saving to database...")
         transcript_id = db.save_transcript(
             url=args.url,
@@ -156,9 +153,19 @@ Available Whisper models (accuracy vs speed):
             file_size_mb=file_size_mb
         )
 
-        print(f"\nSuccess! Transcript saved with ID: {transcript_id}")
+        # Verify the transcript file was created, then clean up DB row and audio
+        base_name = os.path.splitext(os.path.basename(audio_file))[0]
         suffix = "_timestamped" if args.timestamps else ""
-        print(f"Transcript file location: transcripts/{title}{suffix}.md")
+        transcript_file = os.path.join("transcripts", f"{base_name}{suffix}.md")
+
+        if os.path.exists(transcript_file):
+            db.delete_transcript(transcript_id)
+            downloader.cleanup(audio_file)
+            audio_file = None
+            print(f"\nSuccess! Transcript saved to: {transcript_file}")
+        else:
+            print(f"\nWarning: transcript file not found at {transcript_file}")
+            print("Keeping database row and audio file as backup.")
 
         # Show a preview
         print("\n" + "=" * 60)
@@ -172,12 +179,9 @@ Available Whisper models (accuracy vs speed):
         sys.exit(1)
     except Exception as e:
         print(f"\nError: {e}")
+        if transcript_id:
+            print("Transcript is preserved in the database.")
         sys.exit(1)
-    finally:
-        # Step 4: Cleanup
-        if audio_file:
-            print("\n[4/4] Cleaning up downloaded file...")
-            downloader.cleanup(audio_file)
 
     print("\nAll done!")
 

@@ -67,6 +67,14 @@ class TranscriptDatabase:
         conn.close()
         return results
 
+    def delete_transcript(self, transcript_id):
+        """Delete a transcript from the database by ID"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM transcripts WHERE id = ?', (transcript_id,))
+        conn.commit()
+        conn.close()
+
     def search_transcripts(self, search_term):
         """Search for transcripts containing a specific term"""
         conn = sqlite3.connect(self.db_path)

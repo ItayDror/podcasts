@@ -17,6 +17,9 @@ transcripts.db
 *.db
 *.db-journal
 
+# Bot sessions
+sessions/
+
 # Temporary files
 temp/
 *.mp3

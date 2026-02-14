@@ -1,3 +1,19 @@
+# Existing (kept for CLI backward compatibility)
 openai-whisper
 yt-dlp
 python-dotenv
+
+# Telegram bot
+python-telegram-bot[ext]
+
+# LLM (Claude)
+anthropic
+
+# HTTP client for Supabase
+httpx
+
+# YouTube transcript fetching (free, instant)
+youtube-transcript-api
+
+# Fast Whisper transcription (4x faster than openai-whisper on CPU)
+faster-whisper
