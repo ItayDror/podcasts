@@ -125,6 +125,30 @@ class BotHandlers:
         user_id = update.effective_user.id
         session = self.sessions.load(user_id)
 
+        # If Spotify link, resolve to YouTube
+        if "open.spotify.com" in url:
+            await update.message.reply_text("Spotify link detected. Finding episode on YouTube...")
+            loop = asyncio.get_event_loop()
+            try:
+                yt_url, title = await loop.run_in_executor(
+                    None, lambda: _resolve_spotify_to_youtube(url)
+                )
+            except Exception as e:
+                await update.message.reply_text(f"Could not find YouTube version: {e}")
+                return
+
+            if not yt_url:
+                await update.message.reply_text(
+                    "Could not find this episode on YouTube.\n"
+                    "Try pasting the YouTube link directly."
+                )
+                return
+
+            await update.message.reply_text(
+                f"Found: {title}\n{yt_url}\n\nTranscribing..."
+            )
+            url = yt_url
+
         # Send status updates via callback
         status_message = await update.message.reply_text("Starting transcription...")
 
@@ -468,6 +492,59 @@ def _title_from_url(url: str) -> str:
     # Take the domain + first path segment
     parts = title.split("/")
     return parts[0] if parts else url
+
+
+def _resolve_spotify_to_youtube(spotify_url: str) -> tuple[str, str]:
+    """
+    Extract episode title from Spotify, then find it on YouTube.
+    Returns (youtube_url, title) or (None, None).
+    """
+    import re
+    import yt_dlp
+
+    # Step 1: Extract episode title from Spotify using yt-dlp
+    title = None
+    try:
+        with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
+            info = ydl.extract_info(spotify_url, download=False)
+            title = info.get("title") or info.get("episode")
+            # Also grab the show name for better search
+            show = info.get("series") or info.get("album") or ""
+            if show and title:
+                search_query = f"{show} {title}"
+            elif title:
+                search_query = title
+            else:
+                return None, None
+    except Exception:
+        # yt-dlp might not support Spotify directly — try scraping the page
+        try:
+            import httpx
+
+            resp = httpx.get(
+                spotify_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                follow_redirects=True,
+                timeout=10,
+            )
+            # Extract title from og:title meta tag
+            match = re.search(
+                r'<meta\s+property="og:title"\s+content="([^"]+)"', resp.text
+            )
+            if match:
+                title = match.group(1)
+                search_query = title
+            else:
+                return None, None
+        except Exception:
+            return None, None
+
+    # Step 2: Search YouTube for this episode
+    results = _search_youtube(search_query, max_results=3)
+    if results:
+        return results[0]["url"], results[0]["title"]
+
+    return None, None
 
 
 def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
