@@ -54,13 +54,58 @@ class BotHandlers:
         await update.message.reply_text(
             "Podcast Transcriber Bot\n\n"
             "Commands:\n"
+            "/search <query> - Find a podcast episode on YouTube\n"
             "/transcribe <url> - Download and transcribe a podcast\n"
             "/insights - Generate insights from the last transcript\n"
             "/chat - Discuss the episode with AI\n"
             "/done - Exit chat mode\n"
-            "/upload - Push insights to your tracker\n"
+            "/notes - View your notes for this episode\n"
+            "/upload - Push insights + notes to your tracker\n"
             "/status - Show current session\n"
-            "/clear - Start a fresh session"
+            "/clear - Start a fresh session\n\n"
+            "Tip: When an episode is loaded, just type any text to save it as a note."
+        )
+
+    # === /search <query> ===
+    async def search_handler(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        if not await self._require_auth(update):
+            return
+
+        if not context.args:
+            await update.message.reply_text(
+                "Please provide a search query.\n"
+                "Usage: /search 20vc eleven labs vp of sales"
+            )
+            return
+
+        query = " ".join(context.args)
+        await update.message.reply_text(f"Searching YouTube for: {query}...")
+
+        loop = asyncio.get_event_loop()
+        try:
+            results = await loop.run_in_executor(
+                None, lambda: _search_youtube(query)
+            )
+        except Exception as e:
+            await update.message.reply_text(f"Search failed: {e}")
+            return
+
+        if not results:
+            await update.message.reply_text("No results found. Try a different query.")
+            return
+
+        lines = ["<b>YouTube Results:</b>\n"]
+        for i, r in enumerate(results, 1):
+            lines.append(
+                f"{i}. <b>{r['title']}</b>\n"
+                f"   {r['url']}\n"
+            )
+        lines.append("\nCopy a URL and use /transcribe <url>")
+
+        await update.message.reply_text(
+            "\n".join(lines), parse_mode=ParseMode.HTML
         )
 
     # === /transcribe <url> ===
@@ -121,6 +166,7 @@ class BotHandlers:
         session.transcript_source = result.source
         session.state = "has_transcript"
         session.insights = None
+        session.notes = []
         session.conversation_history = []
         self.sessions.save(session)
 
@@ -215,19 +261,39 @@ class BotHandlers:
             "Use /done to exit chat mode."
         )
 
-    # === Plain text messages (chat mode) ===
-    async def chat_message_handler(
+    # === Plain text messages (notes or chat mode) ===
+    async def text_message_handler(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         if not await self._require_auth(update):
             return
 
         user_id = update.effective_user.id
-        if user_id not in self._chat_mode_users:
-            await update.message.reply_text(
-                "Send a command to get started. Use /start to see options."
-            )
+
+        # If in chat mode, route to LLM conversation
+        if user_id in self._chat_mode_users:
+            return await self._handle_chat_message(update, context)
+
+        # If an episode is loaded, save as a note
+        session = self.sessions.load(user_id)
+        if session.transcript_text or session.podcast_url:
+            note = update.message.text.strip()
+            session.notes.append(note)
+            self.sessions.save(session)
+            count = len(session.notes)
+            await update.message.reply_text(f"📝 Note #{count} saved.")
             return
+
+        # No episode loaded
+        await update.message.reply_text(
+            "No episode loaded.\n"
+            "Use /search or /transcribe to load one first."
+        )
+
+    async def _handle_chat_message(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        user_id = update.effective_user.id
 
         session = self.sessions.load(user_id)
         user_message = update.message.text
@@ -275,6 +341,28 @@ class BotHandlers:
         self.sessions.save(session)
         await update.message.reply_text("Exited chat mode.")
 
+    # === /notes ===
+    async def notes_handler(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        if not await self._require_auth(update):
+            return
+
+        session = self.sessions.load(update.effective_user.id)
+        if not session.notes:
+            await update.message.reply_text(
+                "No notes yet. Just type any text while an episode is loaded."
+            )
+            return
+
+        lines = [f"<b>Notes for: {session.podcast_title or 'current episode'}</b>\n"]
+        for i, note in enumerate(session.notes, 1):
+            lines.append(f"{i}. {note}")
+
+        await update.message.reply_text(
+            "\n".join(lines), parse_mode=ParseMode.HTML
+        )
+
     # === /upload ===
     async def upload_handler(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -286,21 +374,34 @@ class BotHandlers:
 
         # If user provided text after /upload, use that as insights
         custom_text = " ".join(context.args) if context.args else None
-        insights = custom_text or session.insights
 
-        if not insights:
+        # Build the upload content: custom text, or insights + notes
+        parts = []
+        if custom_text:
+            parts.append(custom_text)
+        else:
+            if session.insights:
+                parts.append(session.insights)
+            if session.notes:
+                notes_section = "\n\n## My Notes\n" + "\n".join(
+                    f"- {note}" for note in session.notes
+                )
+                parts.append(notes_section)
+
+        combined = "\n".join(parts).strip()
+
+        if not combined:
             await update.message.reply_text(
-                "No insights to upload.\n\n"
+                "Nothing to upload.\n\n"
                 "Either:\n"
-                "• /insights - Generate with AI first\n"
+                "• /insights - Generate with AI\n"
+                "• Type notes while listening\n"
                 "• /upload Your custom text here..."
             )
             return
 
-        # Update session with custom insights if provided
-        if custom_text:
-            session.insights = custom_text
-            self.sessions.save(session)
+        session.insights = combined
+        self.sessions.save(session)
 
         await update.message.reply_text("Uploading to Podcast Tracker...")
 
@@ -339,6 +440,7 @@ class BotHandlers:
         if session.transcript_text:
             lines.append(f"Transcript: {len(session.transcript_text):,} chars")
             lines.append(f"Source: {session.transcript_source or 'unknown'}")
+        lines.append(f"Notes: {len(session.notes)}")
         lines.append(f"Insights: {'Yes' if session.insights else 'No'}")
         lines.append(f"Chat mode: {'Active' if in_chat else 'Off'}")
         lines.append(f"Chat messages: {len(session.conversation_history)}")
@@ -366,3 +468,27 @@ def _title_from_url(url: str) -> str:
     # Take the domain + first path segment
     parts = title.split("/")
     return parts[0] if parts else url
+
+
+def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
+    """Search YouTube using yt-dlp and return top results."""
+    import yt_dlp
+
+    ydl_opts = {
+        "quiet": True,
+        "skip_download": True,
+        "extract_flat": True,
+        "default_search": f"ytsearch{max_results}",
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        result = ydl.extract_info(query, download=False)
+
+    entries = result.get("entries", [])
+    return [
+        {
+            "title": e.get("title", "Unknown"),
+            "url": f"https://www.youtube.com/watch?v={e['id']}",
+        }
+        for e in entries
+        if e.get("id")
+    ]

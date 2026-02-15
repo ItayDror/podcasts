@@ -62,19 +62,21 @@ def main():
 
     # Register command handlers
     app.add_handler(CommandHandler("start", handlers.start_handler))
+    app.add_handler(CommandHandler("search", handlers.search_handler))
     app.add_handler(CommandHandler("transcribe", handlers.transcribe_handler))
     app.add_handler(CommandHandler("insights", handlers.insights_handler))
     app.add_handler(CommandHandler("chat", handlers.chat_handler))
     app.add_handler(CommandHandler("done", handlers.done_handler))
+    app.add_handler(CommandHandler("notes", handlers.notes_handler))
     app.add_handler(CommandHandler("upload", handlers.upload_handler))
     app.add_handler(CommandHandler("status", handlers.status_handler))
     app.add_handler(CommandHandler("clear", handlers.clear_handler))
 
-    # Plain text handler (for chat mode)
+    # Plain text handler (notes when episode loaded, chat when in chat mode)
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            handlers.chat_message_handler,
+            handlers.text_message_handler,
         )
     )
 

@@ -18,6 +18,8 @@ class Session:
     transcript_source: Optional[str] = None  # "youtube_captions" | "whisper"
     # Insights
     insights: Optional[str] = None
+    # User notes (quick comments while listening)
+    notes: list = field(default_factory=list)
     # Conversation history for /chat mode (list of {role, content} dicts)
     conversation_history: list = field(default_factory=list)
     # State tracking
