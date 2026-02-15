@@ -471,24 +471,76 @@ def _title_from_url(url: str) -> str:
 
 
 def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
-    """Search YouTube using yt-dlp and return top results."""
-    import yt_dlp
+    """
+    Search for YouTube videos using Google search (site:youtube.com).
+    Falls back to yt-dlp direct search if Google fails.
+    """
+    import re
+    import httpx
 
-    ydl_opts = {
-        "quiet": True,
-        "skip_download": True,
-        "extract_flat": True,
-        "default_search": f"ytsearch{max_results}",
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        result = ydl.extract_info(query, download=False)
+    results = []
 
-    entries = result.get("entries", [])
-    return [
-        {
-            "title": e.get("title", "Unknown"),
-            "url": f"https://www.youtube.com/watch?v={e['id']}",
+    # Try Google search scoped to YouTube
+    try:
+        search_query = f"site:youtube.com {query}"
+        resp = httpx.get(
+            "https://www.google.com/search",
+            params={"q": search_query, "num": max_results * 2},
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                )
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+
+        # Extract YouTube video URLs and titles from Google results
+        # Pattern matches youtube.com/watch?v= links in the HTML
+        video_pattern = re.findall(
+            r'<a[^>]+href="/url\?q=(https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11}))[^"]*"[^>]*>(.*?)</a>',
+            resp.text,
+        )
+        seen_ids = set()
+        for full_url, video_id, raw_title in video_pattern:
+            if video_id in seen_ids:
+                continue
+            seen_ids.add(video_id)
+            # Clean HTML tags from title
+            title = re.sub(r"<[^>]+>", "", raw_title).strip()
+            if title:
+                results.append({
+                    "title": title,
+                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                })
+            if len(results) >= max_results:
+                break
+    except Exception as e:
+        logging.getLogger(__name__).info(f"Google search failed: {e}, falling back to yt-dlp")
+
+    # Fallback to yt-dlp if Google returned nothing
+    if not results:
+        import yt_dlp
+
+        ydl_opts = {
+            "quiet": True,
+            "skip_download": True,
+            "extract_flat": True,
+            "default_search": f"ytsearch{max_results}",
         }
-        for e in entries
-        if e.get("id")
-    ]
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            result = ydl.extract_info(query, download=False)
+
+        entries = result.get("entries", [])
+        results = [
+            {
+                "title": e.get("title", "Unknown"),
+                "url": f"https://www.youtube.com/watch?v={e['id']}",
+            }
+            for e in entries
+            if e.get("id")
+        ]
+
+    return results[:max_results]
