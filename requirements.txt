@@ -17,3 +17,6 @@ youtube-transcript-api
 
 # Fast Whisper transcription (4x faster than openai-whisper on CPU)
 faster-whisper
+
+# Web search for YouTube episode discovery
+duckduckgo-search

@@ -472,45 +472,32 @@ def _title_from_url(url: str) -> str:
 
 def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
     """
-    Search for YouTube videos using Google search (site:youtube.com).
-    Falls back to yt-dlp direct search if Google fails.
+    Search for YouTube videos using DuckDuckGo (reliable, no API key).
+    Falls back to yt-dlp direct search if DuckDuckGo fails.
     """
     import re
-    import httpx
 
     results = []
 
-    # Try Google search scoped to YouTube
+    # Try DuckDuckGo search scoped to YouTube
     try:
-        search_query = f"site:youtube.com {query}"
-        resp = httpx.get(
-            "https://www.google.com/search",
-            params={"q": search_query, "num": max_results * 2},
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                )
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
+        from duckduckgo_search import DDGS
 
-        # Extract YouTube video URLs and titles from Google results
-        # Pattern matches youtube.com/watch?v= links in the HTML
-        video_pattern = re.findall(
-            r'<a[^>]+href="/url\?q=(https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11}))[^"]*"[^>]*>(.*?)</a>',
-            resp.text,
-        )
-        seen_ids = set()
-        for full_url, video_id, raw_title in video_pattern:
-            if video_id in seen_ids:
-                continue
-            seen_ids.add(video_id)
-            # Clean HTML tags from title
-            title = re.sub(r"<[^>]+>", "", raw_title).strip()
-            if title:
+        with DDGS() as ddgs:
+            search_results = ddgs.text(
+                f"site:youtube.com {query}",
+                max_results=max_results * 2,
+            )
+
+        for r in search_results:
+            url = r.get("href", "")
+            title = r.get("title", "")
+            # Extract YouTube video URLs
+            match = re.search(
+                r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})", url
+            )
+            if match and title:
+                video_id = match.group(1)
                 results.append({
                     "title": title,
                     "url": f"https://www.youtube.com/watch?v={video_id}",
@@ -518,9 +505,11 @@ def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
             if len(results) >= max_results:
                 break
     except Exception as e:
-        logging.getLogger(__name__).info(f"Google search failed: {e}, falling back to yt-dlp")
+        logging.getLogger(__name__).info(
+            f"DuckDuckGo search failed: {e}, falling back to yt-dlp"
+        )
 
-    # Fallback to yt-dlp if Google returned nothing
+    # Fallback to yt-dlp if DuckDuckGo returned nothing
     if not results:
         import yt_dlp
 
