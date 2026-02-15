@@ -62,6 +62,7 @@ def main():
 
     # Register command handlers
     app.add_handler(CommandHandler("start", handlers.start_handler))
+    app.add_handler(CommandHandler("episode", handlers.episode_handler))
     app.add_handler(CommandHandler("search", handlers.search_handler))
     app.add_handler(CommandHandler("transcribe", handlers.transcribe_handler))
     app.add_handler(CommandHandler("insights", handlers.insights_handler))

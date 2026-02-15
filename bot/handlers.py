@@ -54,16 +54,53 @@ class BotHandlers:
         await update.message.reply_text(
             "Podcast Transcriber Bot\n\n"
             "Commands:\n"
+            "/episode <name> - Start a session (just name it, no URL needed)\n"
+            "/transcribe <url> - Transcribe from YouTube or Spotify link\n"
             "/search <query> - Find a podcast episode on YouTube\n"
-            "/transcribe <url> - Download and transcribe a podcast\n"
-            "/insights - Generate insights from the last transcript\n"
+            "/insights - Generate AI insights from transcript\n"
             "/chat - Discuss the episode with AI\n"
             "/done - Exit chat mode\n"
-            "/notes - View your notes for this episode\n"
-            "/upload - Push insights + notes to your tracker\n"
+            "/notes - View your notes\n"
+            "/upload - Push insights + notes to tracker\n"
             "/status - Show current session\n"
-            "/clear - Start a fresh session\n\n"
-            "Tip: When an episode is loaded, just type any text to save it as a note."
+            "/clear - Start fresh\n\n"
+            "Tip: Just type any text to save it as a note for the current episode."
+        )
+
+    # === /episode <name> ===
+    async def episode_handler(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        if not await self._require_auth(update):
+            return
+
+        if not context.args:
+            await update.message.reply_text(
+                "Please provide the episode name.\n"
+                "Usage: /episode Lenny's Podcast - Sherwin Wu, OpenAI"
+            )
+            return
+
+        title = " ".join(context.args)
+        user_id = update.effective_user.id
+        session = self.sessions.load(user_id)
+
+        session.podcast_title = title
+        session.podcast_url = None
+        session.podcast_duration = None
+        session.transcript_text = None
+        session.transcript_language = None
+        session.transcript_source = None
+        session.insights = None
+        session.notes = []
+        session.conversation_history = []
+        session.state = "has_episode"
+        self.sessions.save(session)
+
+        await update.message.reply_text(
+            f"Episode loaded: {title}\n\n"
+            "Now just type your notes as you listen.\n"
+            "Use /notes to review, /upload when done."
         )
 
     # === /search <query> ===
@@ -298,9 +335,9 @@ class BotHandlers:
         if user_id in self._chat_mode_users:
             return await self._handle_chat_message(update, context)
 
-        # If an episode is loaded, save as a note
+        # If an episode is loaded (via /episode, /transcribe, or has notes), save as note
         session = self.sessions.load(user_id)
-        if session.transcript_text or session.podcast_url:
+        if session.podcast_title or session.transcript_text:
             note = update.message.text.strip()
             session.notes.append(note)
             self.sessions.save(session)
@@ -311,7 +348,7 @@ class BotHandlers:
         # No episode loaded
         await update.message.reply_text(
             "No episode loaded.\n"
-            "Use /search or /transcribe to load one first."
+            "Use /episode <name> or /transcribe <url> first."
         )
 
     async def _handle_chat_message(
