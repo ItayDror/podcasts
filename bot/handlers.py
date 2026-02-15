@@ -472,44 +472,76 @@ def _title_from_url(url: str) -> str:
 
 def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
     """
-    Search for YouTube videos using DuckDuckGo (reliable, no API key).
-    Falls back to yt-dlp direct search if DuckDuckGo fails.
+    Two-step search:
+    1. Broad DuckDuckGo search to find the episode/podcast name
+    2. Search YouTube specifically for that name
     """
     import re
 
-    results = []
-
-    # Try DuckDuckGo search scoped to YouTube
+    # Step 1: Broad search to find the episode name
+    episode_title = None
     try:
         from duckduckgo_search import DDGS
 
         with DDGS() as ddgs:
-            search_results = ddgs.text(
-                f"site:youtube.com {query}",
-                max_results=max_results * 2,
-            )
+            broad_results = ddgs.text(query, max_results=5)
 
-        for r in search_results:
+        # Check if any results are already YouTube links
+        youtube_results = []
+        for r in broad_results:
             url = r.get("href", "")
             title = r.get("title", "")
-            # Extract YouTube video URLs
             match = re.search(
                 r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})", url
             )
             if match and title:
-                video_id = match.group(1)
+                youtube_results.append({
+                    "title": title,
+                    "url": f"https://www.youtube.com/watch?v={match.group(1)}",
+                })
+
+        # If we already found YouTube results, return them
+        if youtube_results:
+            return youtube_results[:max_results]
+
+        # Otherwise, extract the episode title from the top result
+        if broad_results:
+            episode_title = broad_results[0].get("title", "")
+    except Exception as e:
+        logging.getLogger(__name__).info(f"Broad search failed: {e}")
+
+    # Step 2: Search YouTube for the episode title (or original query)
+    yt_query = episode_title or query
+    results = []
+
+    try:
+        from duckduckgo_search import DDGS
+
+        with DDGS() as ddgs:
+            yt_results = ddgs.text(
+                f"site:youtube.com {yt_query}",
+                max_results=max_results * 2,
+            )
+
+        for r in yt_results:
+            url = r.get("href", "")
+            title = r.get("title", "")
+            match = re.search(
+                r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})", url
+            )
+            if match and title:
                 results.append({
                     "title": title,
-                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                    "url": f"https://www.youtube.com/watch?v={match.group(1)}",
                 })
             if len(results) >= max_results:
                 break
     except Exception as e:
         logging.getLogger(__name__).info(
-            f"DuckDuckGo search failed: {e}, falling back to yt-dlp"
+            f"YouTube search failed: {e}, falling back to yt-dlp"
         )
 
-    # Fallback to yt-dlp if DuckDuckGo returned nothing
+    # Fallback to yt-dlp direct YouTube search
     if not results:
         import yt_dlp
 
@@ -520,7 +552,7 @@ def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
             "default_search": f"ytsearch{max_results}",
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            result = ydl.extract_info(query, download=False)
+            result = ydl.extract_info(yt_query, download=False)
 
         entries = result.get("entries", [])
         results = [
