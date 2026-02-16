@@ -56,8 +56,11 @@ class LLMClient:
         system = CHAT_SYSTEM_PROMPT.format(title=title, insights=insights)
         tools = _chat_tools()
 
+        # Sanitize history: drop orphaned tool_use messages that lack tool_results
+        clean_history = _sanitize_history(conversation_history)
+
         # Build messages: prior history + new user message
-        messages = list(conversation_history) + [
+        messages = list(clean_history) + [
             {"role": "user", "content": user_message}
         ]
 
@@ -94,6 +97,43 @@ class LLMClient:
             assistant_text = "I processed your request but couldn't generate a text response. Please try rephrasing your question."
 
         return assistant_text, messages
+
+
+def _sanitize_history(history: list[dict]) -> list[dict]:
+    """Remove trailing messages that would violate the Anthropic API contract.
+
+    The API requires every assistant message containing tool_use blocks to be
+    immediately followed by a user message with matching tool_result blocks.
+    If a previous crash left orphaned tool_use messages at the end of the
+    history, we trim them off so the next API call doesn't fail with a 400.
+    """
+    clean = list(history)
+    while clean:
+        last = clean[-1]
+        # Check if the last message is an assistant message with tool_use blocks
+        if last.get("role") == "assistant":
+            content = last.get("content", [])
+            if isinstance(content, list) and any(
+                isinstance(block, dict) and block.get("type") == "tool_use"
+                for block in content
+            ):
+                # Orphaned tool_use at the end — remove it
+                logger.warning("Removing orphaned tool_use message from conversation history")
+                clean.pop()
+                continue
+        # Also remove trailing user messages with tool_result (orphaned results
+        # without a preceding tool_use, or leftover from partial flow)
+        if last.get("role") == "user":
+            content = last.get("content", [])
+            if isinstance(content, list) and all(
+                isinstance(block, dict) and block.get("type") == "tool_result"
+                for block in content
+            ):
+                logger.warning("Removing orphaned tool_result message from conversation history")
+                clean.pop()
+                continue
+        break
+    return clean
 
 
 def _chat_tools() -> list[dict]:
