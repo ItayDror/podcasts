@@ -48,8 +48,11 @@ class LLMClient:
     ) -> tuple[str, list[dict]]:
         """
         Multi-turn chat with tool_use.
+        Loops on tool calls until the model produces a text response
+        (up to MAX_TOOL_ROUNDS to prevent infinite loops).
         Returns (assistant_response_text, updated_conversation_history).
         """
+        MAX_TOOL_ROUNDS = 5
         system = CHAT_SYSTEM_PROMPT.format(title=title, insights=insights)
         tools = _chat_tools()
 
@@ -58,36 +61,37 @@ class LLMClient:
             {"role": "user", "content": user_message}
         ]
 
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=1500,
-            system=system,
-            messages=messages,
-            tools=tools,
-        )
+        all_text_parts = []
 
-        # Process response — handle text + tool_use blocks
-        text_parts, tool_results = _process_response(response, transcript)
-
-        # If there were tool calls, send results back and get final response
-        if tool_results:
-            messages.append({"role": "assistant", "content": _serialize_content(response.content)})
-            messages.append({"role": "user", "content": tool_results})
-
-            final_response = self._client.messages.create(
+        for round_num in range(MAX_TOOL_ROUNDS + 1):
+            response = self._client.messages.create(
                 model=self._model,
                 max_tokens=1500,
                 system=system,
                 messages=messages,
                 tools=tools,
             )
-            assistant_text = _extract_text(final_response)
-            messages.append(
-                {"role": "assistant", "content": _serialize_content(final_response.content)}
-            )
-        else:
-            assistant_text = "\n".join(text_parts)
+
+            text_parts, tool_results = _process_response(response, transcript)
+            all_text_parts.extend(text_parts)
+
+            # Always append the assistant response to messages
             messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+
+            if not tool_results:
+                # No tool calls — model is done, break out
+                break
+
+            # Tool calls present — append results and loop for next response
+            messages.append({"role": "user", "content": tool_results})
+            logger.debug("Tool use round %d, looping for next response", round_num + 1)
+
+        assistant_text = "\n".join(all_text_parts).strip()
+
+        # Safety: never return empty text (Telegram rejects empty messages)
+        if not assistant_text:
+            logger.warning("LLM returned no text after %d rounds, returning fallback", round_num + 1)
+            assistant_text = "I processed your request but couldn't generate a text response. Please try rephrasing your question."
 
         return assistant_text, messages
 
