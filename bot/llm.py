@@ -71,7 +71,7 @@ class LLMClient:
 
         # If there were tool calls, send results back and get final response
         if tool_results:
-            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "assistant", "content": _serialize_content(response.content)})
             messages.append({"role": "user", "content": tool_results})
 
             final_response = self._client.messages.create(
@@ -83,11 +83,11 @@ class LLMClient:
             )
             assistant_text = _extract_text(final_response)
             messages.append(
-                {"role": "assistant", "content": final_response.content}
+                {"role": "assistant", "content": _serialize_content(final_response.content)}
             )
         else:
             assistant_text = "\n".join(text_parts)
-            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         return assistant_text, messages
 
@@ -182,6 +182,19 @@ def _search_transcript(transcript: str, query: str) -> str:
     if not matches:
         return f"No mentions of '{query}' found in the transcript."
     return "\n\n---\n\n".join(matches)
+
+
+def _serialize_content(content) -> list[dict]:
+    """Convert Anthropic SDK content blocks to plain dicts for JSON storage."""
+    serialized = []
+    for block in content:
+        if hasattr(block, "model_dump"):
+            serialized.append(block.model_dump())
+        elif isinstance(block, dict):
+            serialized.append(block)
+        else:
+            serialized.append({"type": "text", "text": str(block)})
+    return serialized
 
 
 def _extract_text(response) -> str:
